@@ -411,6 +411,21 @@ table.data-table tbody tr:last-child td{border-bottom:none}
 .banner.warn{background:var(--warning-soft);color:var(--warning)}
 .banner svg{width:15px;height:15px;flex-shrink:0}
 
+.sync-badge{
+  display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:8px;
+  font-size:12px;font-weight:600;margin-bottom:14px;
+}
+.sync-badge::before{content:'';width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sync-badge.ok{background:var(--good-soft);color:var(--good)}
+.sync-badge.ok::before{background:var(--good)}
+.sync-badge.syncing{background:var(--surface-3);color:var(--text-secondary)}
+.sync-badge.syncing::before{background:var(--text-muted);animation:pulse-dot 1.1s ease-in-out infinite}
+.sync-badge.error{background:var(--critical-soft);color:var(--critical)}
+.sync-badge.error::before{background:var(--critical)}
+.sync-badge.off{background:var(--surface-3);color:var(--text-muted)}
+.sync-badge.off::before{background:var(--text-muted)}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.3}}
+
 .pivot-sublabel{
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;
 }
@@ -579,9 +594,9 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
           </div>
         </div>
 
-        <div class="panel" style="margin-top:18px">
+        <div id="date-trend-panel" class="panel" style="margin-top:18px">
           <div class="panel-head">
-            <div><h3>Tren Tanggal &times; Aging</h3><div class="sub">Total outstanding per tanggal dokumen, 14 tanggal terakhir &mdash; baris Progress membandingkan Grand Total dengan tanggal sebelumnya</div></div>
+            <div><h3>Tren Tanggal &times; Aging</h3><div class="sub">Total komposisi aging seluruh portofolio pada setiap hari data diperbarui &mdash; tersimpan permanen di Google Sheets, tidak berubah walau data di-upload ulang. Baris Progress membandingkan Grand Total dengan hari sebelumnya.</div></div>
             <div id="date-pivot-legend" class="legend"></div>
           </div>
           <div id="date-aging-pivot"></div>
@@ -606,6 +621,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="page-upload" class="hidden">
         <div class="panel" style="max-width:640px">
           <div class="panel-head"><div><h3>Upload Data Excel</h3><div class="sub" id="upload-meta">—</div></div></div>
+          <div id="sync-status" class="sync-badge off">—</div>
           <div id="upload-zone" class="upload-zone">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 10 6-6 6 6"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
             <div class="u-title">Klik atau seret file Excel ke sini</div>
@@ -649,7 +665,7 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 /* ============================================================
    SBNI Ops Center — application logic
    Single-file SPA: auth, filtering, charts (hand-built SVG),
-   sortable table, admin Excel upload, shared-artifact publish.
+   sortable table, admin Excel upload, Google Sheets sync (Code.gs).
    ============================================================ */
 
 var VERSION = '1.0.0';
@@ -657,11 +673,6 @@ var AGING_LABELS = ['1. 0-7 Hari','2. 8-14 Hari','3. 15-30 Hari','4. 31-60 Hari'
 var AGING_SHORT  = ['0-7 hari','8-14 hari','15-30 hari','31-60 hari','61-90 hari','91-120 hari','>120 hari'];
 var RISK_VARS = ['--risk-1','--risk-2','--risk-3','--risk-4','--risk-5','--risk-6','--risk-7'];
 var STATUS_LABELS = ['Pending Delivery','Pending Sales','Lainnya'];
-
-/* ---------- element source capture (for republish) ---------- */
-var APP_SCRIPT_SRC = document.getElementById('app-script').textContent;
-var APP_STYLE_SRC = document.getElementById('app-style').textContent;
-var XLSX_LIB_SRC = document.getElementById('xlsx-lib').textContent;
 
 /* ---------- load embedded data ---------- */
 var DATA = JSON.parse(document.getElementById('sbni-data').textContent);
@@ -782,6 +793,14 @@ var CREDENTIALS = [
   }
 ];
 
+/* ---------- Google Sheets sync config (Apps Script Web App) ----------
+   url: the deployed Web App's /exec URL (empty = sync disabled, app runs
+   fully offline using the embedded/local data as before).
+   secret: shared token checked by the Apps Script — see Code.gs. ---------- */
+var SHEETS_CONFIG = {"url": "https://script.google.com/macros/s/AKfycbzEziQlQNKYYYRVPUWFC8ctKp-HkGG_hz0C4Po3IjYA05r_wEG4aPT1WtBUxVFJnoLQOg/exec", "secret": "NkwKCnFFA3TGh_4qgeiIfrdDFf-G0d2y"};
+var SNAPSHOTS = [];            // daily aging-bucket history, from Google Sheets
+var SYNC_STATE = { status: 'off', at: null };  // 'off' | 'ok' | 'error' | 'syncing'
+
 /* ============================================================
    Utilities
    ============================================================ */
@@ -820,6 +839,16 @@ function fmtCompact(n){
 function fmtInt(n){ return (n||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
 var EPOCH = new Date(DATA.epoch + 'T00:00:00Z');
 function serialToDate(s){ var d = new Date(EPOCH.getTime()); d.setUTCDate(d.getUTCDate() + s); return d; }
+function serialToISO(s){
+  var d = serialToDate(s);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+}
+function isoToSerial(iso){
+  if(!iso) return null;
+  var p = iso.split('-').map(Number);
+  var d = Date.UTC(p[0], p[1]-1, p[2]);
+  return Math.round((d - EPOCH.getTime()) / 86400000);
+}
 var MONTHS_ID = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 function fmtDateShort(serial){
   var d = serialToDate(serial);
@@ -1298,20 +1327,29 @@ function renderReasonAgingPivot(container, recs, opts){
   container.appendChild(scrollWrap);
 }
 
-/* ---- Date x Aging table (recent-dates trend, with a Progress row) ---- */
-function renderDateAgingTable(container, recs){
+/* ---- Date x Aging table ----
+   Unlike every other panel on this page, this table is NOT derived from
+   the currently-loaded/filtered record set. It shows the whole portfolio's
+   aging-bucket composition on each day an upload was synced to Google
+   Sheets (SNAPSHOTS, populated by fetchFromSheets()/postToSheets()) — a
+   real day-over-day history that survives across uploads, browsers and
+   devices. Admin/Owner only (see renderDashboardPage). ---- */
+function renderDateAgingTable(container){
   container.innerHTML = '';
-  if(recs.length === 0){
-    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'}, ['Tidak ada data pada rentang filter ini.']));
+  if(!SHEETS_CONFIG || !SHEETS_CONFIG.url){
+    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'},
+      ['Google Sheets belum terhubung, sehingga histori harian belum bisa disimpan. Lihat halaman Upload Data untuk menghubungkan.']));
     return;
   }
-  var agg = aggregate(recs);
-  var allDates = Object.keys(agg.byDate).map(Number).sort(function(a,b){return a-b;});
-  var dates = allDates.slice(-14);
+  if(!SNAPSHOTS || SNAPSHOTS.length === 0){
+    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'},
+      ['Belum ada histori tersimpan. Histori akan mulai terkumpul setelah upload berikutnya.']));
+    return;
+  }
+
+  var snaps = SNAPSHOTS.slice(-14);
   var colMax = [0,0,0,0,0,0,0];
-  dates.forEach(function(d){
-    for(var b=0;b<7;b++) colMax[b] = Math.max(colMax[b], agg.byDate[d][b+1]);
-  });
+  snaps.forEach(function(s){ for(var b=0;b<7;b++) colMax[b] = Math.max(colMax[b], s.byBucket[b]); });
 
   var scrollWrap = el('div', {class:'table-scroll'});
   var table = el('table', {class:'pivot-table'});
@@ -1328,14 +1366,11 @@ function renderDateAgingTable(container, recs){
   table.appendChild(thead);
 
   var tbody = el('tbody');
-  var rowTotals = {};
-  dates.forEach(function(d){
+  snaps.forEach(function(s){
     var tr = el('tr');
-    tr.appendChild(el('th', {}, [fmtDateFull(d)]));
-    var rowTotal = 0;
+    tr.appendChild(el('th', {}, [fmtDateFull(isoToSerial(s.date))]));
     for(var b=0;b<7;b++){
-      var v = agg.byDate[d][b+1];
-      rowTotal += v;
+      var v = s.byBucket[b];
       var td;
       if(v <= 0){
         td = el('td', {class:'pv-empty'}, ['—']);
@@ -1345,8 +1380,7 @@ function renderDateAgingTable(container, recs){
       }
       tr.appendChild(td);
     }
-    rowTotals[d] = rowTotal;
-    tr.appendChild(el('td', {class:'pv-total'}, [fmtCompact(rowTotal)]));
+    tr.appendChild(el('td', {class:'pv-total'}, [fmtCompact(s.grandTotal)]));
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -1356,9 +1390,9 @@ function renderDateAgingTable(container, recs){
   trf.appendChild(el('th', {}, ['Progress']));
   for(var pb=0;pb<7;pb++) trf.appendChild(el('td', {class:'pv-empty'}, ['—']));
   var progressCell;
-  if(dates.length >= 2){
-    var last = dates[dates.length-1], prev = dates[dates.length-2];
-    var delta = rowTotals[last] - rowTotals[prev];
+  if(snaps.length >= 2){
+    var last = snaps[snaps.length-1], prev = snaps[snaps.length-2];
+    var delta = last.grandTotal - prev.grandTotal;
     var up = delta > 0, flat = Math.abs(delta) < 1;
     var cls = flat ? 'flat' : (up ? 'up' : 'down');
     var arrow = flat ? '→' : (up ? '↑' : '↓');
@@ -1670,15 +1704,23 @@ function renderDashboardPage(recs){
   }
   renderRankBars($('#reason-chart'), reasonEntries, '--accent-2', {limit:8, labelWidth:190});
 
-  var datePivotLegend = $('#date-pivot-legend');
-  datePivotLegend.innerHTML = '';
-  for(var dpb=0;dpb<7;dpb++){
-    var dpitem = el('div', {class:'legend-item'});
-    dpitem.appendChild(el('span', {class:'legend-swatch', style:'background:var('+RISK_VARS[dpb]+')'}));
-    dpitem.appendChild(document.createTextNode(AGING_SHORT[dpb]));
-    datePivotLegend.appendChild(dpitem);
+  var dateTrendPanel = $('#date-trend-panel');
+  if(SESSION.role === 'vendor'){
+    // Daily snapshots are a whole-portfolio (all-vendor) total — hide this
+    // panel for vendor logins so one vendor never sees another's totals.
+    dateTrendPanel.classList.add('hidden');
+  } else {
+    dateTrendPanel.classList.remove('hidden');
+    var datePivotLegend = $('#date-pivot-legend');
+    datePivotLegend.innerHTML = '';
+    for(var dpb=0;dpb<7;dpb++){
+      var dpitem = el('div', {class:'legend-item'});
+      dpitem.appendChild(el('span', {class:'legend-swatch', style:'background:var('+RISK_VARS[dpb]+')'}));
+      dpitem.appendChild(document.createTextNode(AGING_SHORT[dpb]));
+      datePivotLegend.appendChild(dpitem);
+    }
+    renderDateAgingTable($('#date-aging-pivot'));
   }
-  renderDateAgingTable($('#date-aging-pivot'), recs);
 
   var pivotLegend = $('#pivot-legend');
   pivotLegend.innerHTML = '';
@@ -1815,52 +1857,86 @@ function transformRows(rows){
   return { epoch: DATA.epoch, vendors:vendors, reasons:reasons, agingGroups: AGING_GROUP_LIST, statusLabels:['PENDING DELIVERY','PENDING SALES','OTHER'], records:records, updatedAt: new Date().toISOString(), updatedBy: SESSION.display };
 }
 
-/* ============================================================
-   Publish (persist for all viewers) — best effort
-   ============================================================ */
-function buildFullDocument(dataObj){
-  var dataJson = JSON.stringify(dataObj).replace(/</g, '\\u003c');
-  var head = '<meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>SBNI Ops Center</title>' +
-    '<link rel="preconnect" href="https://fonts.googleapis.com">' +
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">' +
-    '<style id="app-style">' + APP_STYLE_SRC + '</style>';
-  var shellHtml = document.getElementById('shell-template').innerHTML;
-  var body = '<div id="boot-loading">Memuat SBNI Ops Center…</div>' +
-    '<template id="shell-template">' + shellHtml + '</template>' +
-    '<div id="mount"></div>' +
-    '<script id="sbni-data" type="application/json">' + dataJson + '<' + '/script>' +
-    '<script id="xlsx-lib">' + XLSX_LIB_SRC + '<' + '/script>' +
-    '<script id="app-script">' + APP_SCRIPT_SRC + '<' + '/script>';
-  return '<!doctype html>\n<html lang="id">\n<head>' + head + '</head>\n<body>' + body + '</body>\n</html>';
-}
 
 function persistData(newData){
   DATA = newData;
   saveLocalData();
-  var full = buildFullDocument(newData);
-  if(!window.claude || !window.claude.use){
-    toast('Data diperbarui di perangkat ini. (Di luar Claude, pembaruan tidak tersinkron ke perangkat lain.)', 'good');
+
+  if(!SHEETS_CONFIG || !SHEETS_CONFIG.url){
+    toast('Data diperbarui di perangkat ini. (Google Sheets belum terhubung — lihat halaman Upload Data untuk status sinkronisasi.)', 'good');
     return;
   }
-  window.claude.use('artifact').then(function(artifact){
-    if(!artifact){ toast('Data diperbarui di perangkat ini saja — sinkronisasi tidak tersedia di tampilan ini.', 'good'); return; }
-    artifact.publish(full).then(function(){
-      toast('Berhasil dipublikasikan — semua orang yang membuka tautan ini kini melihat data terbaru.', 'good');
-    }).catch(function(err){
-      var code = err && err.code;
-      if(code === 'not_writer' || code === 'not_granted' || code === 'consent_required'){
-        toast('Data diperbarui di perangkat ini saja. Untuk mempublikasikan ke semua orang, minta pemilik tautan memberi akses edit, atau minta mereka yang mengunggah.', 'good');
-      } else if(code === 'conflict'){
-        toast('Ada versi lain yang baru saja dipublikasikan — memuat ulang…', 'good');
-      } else {
-        toast('Data diperbarui di perangkat ini. Publikasi otomatis gagal ('+(code||'error')+').', 'error');
-      }
-    });
+
+  SYNC_STATE.status = 'syncing';
+  postToSheets(newData).then(function(res){
+    if(res && res.ok){
+      if(res.dailySnapshots) SNAPSHOTS = res.dailySnapshots;
+      SYNC_STATE.status = 'ok';
+      SYNC_STATE.at = new Date();
+      toast('Tersimpan ke Google Sheets — semua perangkat &amp; vendor kini melihat data terbaru.', 'good');
+      renderAll();
+    } else {
+      SYNC_STATE.status = 'error';
+      toast('Data diperbarui di perangkat ini, tapi gagal tersimpan ke Google Sheets ('+((res&&res.error)||'error')+').', 'error');
+    }
+  }).catch(function(err){
+    SYNC_STATE.status = 'error';
+    toast('Data diperbarui di perangkat ini saja — tidak bisa menghubungi Google Sheets ('+(err&&err.message||err)+').', 'error');
+  });
+}
+
+/* ============================================================
+   Google Sheets sync (Apps Script Web App backend — see Code.gs)
+   ============================================================ */
+function sheetsRecordsForWire(newData){
+  // Convert the app's internal record shape (day-serial numbers) into the
+  // wire shape Code.gs expects (ISO date strings), so the Sheet stays
+  // human-readable and independent of this app's internal epoch.
+  return newData.records.map(function(r){
+    return [
+      r[0], serialToISODataEpoch(r[1], newData.epoch), r[2], r[3], r[4], r[5],
+      r[6], r[7], r[8], r[9], r[10], (r[11]!==null && r[11]!==undefined) ? serialToISODataEpoch(r[11], newData.epoch) : ''
+    ];
+  });
+}
+function serialToISODataEpoch(serial, epochStr){
+  var epoch = new Date(epochStr + 'T00:00:00Z');
+  var d = new Date(epoch.getTime());
+  d.setUTCDate(d.getUTCDate() + serial);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+}
+
+function postToSheets(newData){
+  var payload = {
+    secret: SHEETS_CONFIG.secret,
+    uploadedBy: newData.updatedBy || (SESSION && SESSION.display) || 'Admin',
+    vendors: newData.vendors,
+    reasons: newData.reasons,
+    records: sheetsRecordsForWire(newData)
+  };
+  return fetch(SHEETS_CONFIG.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight against Apps Script
+    body: JSON.stringify(payload)
+  }).then(function(r){ return r.json(); });
+}
+
+function fetchFromSheets(){
+  if(!SHEETS_CONFIG || !SHEETS_CONFIG.url) return Promise.resolve(null);
+  var url = SHEETS_CONFIG.url + (SHEETS_CONFIG.url.indexOf('?') >= 0 ? '&' : '?') + 'secret=' + encodeURIComponent(SHEETS_CONFIG.secret);
+  SYNC_STATE.status = 'syncing';
+  return fetch(url).then(function(r){ return r.json(); }).then(function(res){
+    if(res && res.ok){
+      SYNC_STATE.status = 'ok';
+      SYNC_STATE.at = new Date();
+      if(res.dailySnapshots) SNAPSHOTS = res.dailySnapshots;
+      return res.data; // null if the Sheet has no upload yet
+    }
+    SYNC_STATE.status = 'error';
+    return null;
   }).catch(function(){
-    toast('Data diperbarui di perangkat ini saja.', 'good');
+    SYNC_STATE.status = 'error';
+    return null;
   });
 }
 
@@ -1925,6 +2001,30 @@ function renderUploadPage(){
     if(f) handleFile(f);
   });
   $('#upload-meta').textContent = (DATA.updatedAt ? ('Data terakhir diperbarui: ' + fmtDateFull(Math.round((new Date(DATA.updatedAt)-EPOCH)/86400000)) + (DATA.updatedBy ? ' oleh '+DATA.updatedBy : '')) : 'Menggunakan data awal bawaan.');
+  updateSyncBadge();
+}
+
+function updateSyncBadge(){
+  var badge = $('#sync-status');
+  if(!badge) return;
+  if(!SHEETS_CONFIG || !SHEETS_CONFIG.url){
+    badge.className = 'sync-badge off';
+    badge.textContent = 'Google Sheets belum terhubung — data hanya tersimpan di perangkat ini.';
+    return;
+  }
+  if(SYNC_STATE.status === 'ok'){
+    badge.className = 'sync-badge ok';
+    badge.textContent = 'Tersinkron ke Google Sheets' + (SYNC_STATE.at ? (' — ' + SYNC_STATE.at.toLocaleTimeString('id-ID')) : '') + '.';
+  } else if(SYNC_STATE.status === 'syncing'){
+    badge.className = 'sync-badge syncing';
+    badge.textContent = 'Menyinkronkan ke Google Sheets…';
+  } else if(SYNC_STATE.status === 'error'){
+    badge.className = 'sync-badge error';
+    badge.textContent = 'Gagal menghubungi Google Sheets — memakai data di perangkat ini.';
+  } else {
+    badge.className = 'sync-badge off';
+    badge.textContent = 'Google Sheets belum terhubung.';
+  }
 }
 
 /* ============================================================
@@ -2077,6 +2177,17 @@ function boot(){
   } else {
     showLogin();
   }
+  // Pull the shared dataset from Google Sheets, if configured. This runs
+  // after the initial render (using embedded/local data) so the app is
+  // usable immediately; when Sheets responds, refresh with the shared data.
+  fetchFromSheets().then(function(sheetData){
+    if(sheetData && sheetData.records && sheetData.records.length){
+      DATA = sheetData;
+      saveLocalData();
+    }
+    if(SESSION) renderAll();
+    updateSyncBadge();
+  });
 }
 
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
