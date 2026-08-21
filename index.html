@@ -521,7 +521,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-08-21 05:12 UTC</div>
+    <div class="build-stamp">Versi build: 2026-08-21 05:33 UTC</div>
   </div>
 </div>
 
@@ -546,7 +546,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-08-21 05:12 UTC</div>
+      <div class="build-stamp">v 2026-08-21 05:33 UTC</div>
     </div>
   </aside>
 
@@ -858,17 +858,20 @@ function serialToISO(s){
   return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
 }
 function isoToSerial(iso){
-  if(!iso) return null;
+  if(!iso || typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   var p = iso.split('-').map(Number);
   var d = Date.UTC(p[0], p[1]-1, p[2]);
+  if(isNaN(d)) return null;
   return Math.round((d - EPOCH.getTime()) / 86400000);
 }
 var MONTHS_ID = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 function fmtDateShort(serial){
+  if(serial === null || serial === undefined || isNaN(serial)) return '—';
   var d = serialToDate(serial);
   return d.getUTCDate() + ' ' + MONTHS_ID[d.getUTCMonth()];
 }
 function fmtDateFull(serial){
+  if(serial === null || serial === undefined || isNaN(serial)) return 'Tanggal tidak valid';
   var d = serialToDate(serial);
   return d.getUTCDate() + ' ' + MONTHS_ID[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
 }
@@ -1385,7 +1388,12 @@ function renderDateAgingTable(container){
     return;
   }
 
-  var snaps = SNAPSHOTS.slice(-14);
+  var snaps = SNAPSHOTS.filter(function(s){ return isoToSerial(s.date) !== null; }).slice(-14);
+  if(snaps.length === 0){
+    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'},
+      ['Belum ada histori tersimpan. Histori akan mulai terkumpul setelah upload berikutnya.']));
+    return;
+  }
   var colMax = [0,0,0,0,0,0,0];
   snaps.forEach(function(s){ for(var b=0;b<7;b++) colMax[b] = Math.max(colMax[b], s.byBucket[b]); });
 
