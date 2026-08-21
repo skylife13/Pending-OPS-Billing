@@ -208,6 +208,8 @@ a{color:inherit}
 }
 .login-error.show{display:block}
 .login-foot{margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);color:#5d6470;font-size:11.5px;line-height:1.6}
+.build-stamp{font-family:var(--font-mono);font-size:10px;color:#5d6470;opacity:.65;margin-top:8px}
+.rail-foot .build-stamp{text-align:center;color:var(--text-muted);margin-top:8px}
 
 /* ===== App shell ===== */
 #app-shell{display:flex;min-height:100vh}
@@ -519,6 +521,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
+    <div class="build-stamp">Versi build: 2026-08-21 05:12 UTC</div>
   </div>
 </div>
 
@@ -543,6 +546,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
+      <div class="build-stamp">v 2026-08-21 05:12 UTC</div>
     </div>
   </aside>
 
@@ -798,8 +802,18 @@ var CREDENTIALS = [
    fully offline using the embedded/local data as before).
    secret: shared token checked by the Apps Script — see Code.gs. ---------- */
 var SHEETS_CONFIG = {"url": "https://script.google.com/macros/s/AKfycbzEziQlQNKYYYRVPUWFC8ctKp-HkGG_hz0C4Po3IjYA05r_wEG4aPT1WtBUxVFJnoLQOg/exec", "secret": "NkwKCnFFA3TGh_4qgeiIfrdDFf-G0d2y"};
-var SNAPSHOTS = [];            // daily aging-bucket history, from Google Sheets
+var SNAPSHOTS = [];            // daily whole-portfolio aging-bucket history, from Google Sheets
+var REASON_SNAPSHOTS = {};     // { dateISO: [{reason, byBucket:[7]}, ...] } — daily reason x aging history
 var SYNC_STATE = { status: 'off', at: null };  // 'off' | 'ok' | 'error' | 'syncing'
+
+function groupReasonSnapshots(flat){
+  var map = {};
+  (flat||[]).forEach(function(row){
+    if(!map[row.date]) map[row.date] = [];
+    map[row.date].push({ reason: row.reason, byBucket: row.byBucket });
+  });
+  return map;
+}
 
 /* ============================================================
    Utilities
@@ -1247,21 +1261,11 @@ function renderRankBars(container, entries, colorVar, opts){
 }
 
 /* ---- Reason x Aging pivot table ---- */
-function renderReasonAgingPivot(container, recs, opts){
-  opts = opts || {};
-  container.innerHTML = '';
-  if(opts.label){
-    var lbl = el('div', {class:'pivot-sublabel'});
-    var titleEl = el('span', {class:'psl-title'}, [opts.label]);
-    if(opts.dateText) titleEl.appendChild(el('span', {class:'psl-date'}, [opts.dateText]));
-    lbl.appendChild(titleEl);
-    if(opts.totalText) lbl.appendChild(el('span', {class:'psl-total'}, [opts.totalText]));
-    container.appendChild(lbl);
-  }
-  if(recs.length === 0){
-    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'}, ['Tidak ada data pada tanggal ini.']));
-    return;
-  }
+/* Aggregate a raw record list into {rows, colTotals, grandTotal} for the
+   Reason x Aging pivot. Used for the "Hari Ini" (current, live) side —
+   the CURRENT full portfolio, not narrowed to records dated "today" (see
+   note on renderDashboardPage for why narrowing by date is wrong here). */
+function buildReasonRowsFromRecords(recs){
   var byReason = {}; // reasonIdx -> [b1..b7]
   var colTotals = [0,0,0,0,0,0,0];
   var grandTotal = 0;
@@ -1275,8 +1279,42 @@ function renderReasonAgingPivot(container, recs, opts){
   var rows = Object.keys(byReason).map(function(k){
     var vals = byReason[k];
     var rowTotal = vals.reduce(function(a,b){return a+b;},0);
-    return { idx:k, name: DATA.reasons[k], vals: vals, total: rowTotal };
+    return { name: DATA.reasons[k], vals: vals, total: rowTotal };
   }).sort(function(a,b){ return b.total - a.total; });
+  return { rows: rows, colTotals: colTotals, grandTotal: grandTotal };
+}
+
+/* Same shape, but built from a persisted Google Sheets ReasonSnapshot
+   (already resolved to reason NAMES, not indices) — used for "Kemarin". */
+function buildReasonRowsFromSnapshot(reasonRows){
+  var colTotals = [0,0,0,0,0,0,0];
+  var grandTotal = 0;
+  var rows = (reasonRows||[]).map(function(rr){
+    var vals = rr.byBucket.slice();
+    var rowTotal = vals.reduce(function(a,b){return a+b;},0);
+    for(var b=0;b<7;b++) colTotals[b] += vals[b];
+    grandTotal += rowTotal;
+    return { name: rr.reason, vals: vals, total: rowTotal };
+  }).sort(function(a,b){ return b.total - a.total; });
+  return { rows: rows, colTotals: colTotals, grandTotal: grandTotal };
+}
+
+function renderReasonAgingPivot(container, built, opts){
+  opts = opts || {};
+  container.innerHTML = '';
+  if(opts.label){
+    var lbl = el('div', {class:'pivot-sublabel'});
+    var titleEl = el('span', {class:'psl-title'}, [opts.label]);
+    if(opts.dateText) titleEl.appendChild(el('span', {class:'psl-date'}, [opts.dateText]));
+    lbl.appendChild(titleEl);
+    if(opts.totalText) lbl.appendChild(el('span', {class:'psl-total'}, [opts.totalText]));
+    container.appendChild(lbl);
+  }
+  if(!built || built.rows.length === 0){
+    container.appendChild(el('div', {style:'padding:30px;text-align:center;color:var(--text-muted);font-size:12.5px'}, [opts.emptyText || 'Tidak ada data.']));
+    return;
+  }
+  var rows = built.rows, colTotals = built.colTotals, grandTotal = built.grandTotal;
   var colMax = colTotals.map(function(_, ci){
     return Math.max.apply(null, rows.map(function(r){ return r.vals[ci]; })) || 1;
   });
@@ -1731,23 +1769,51 @@ function renderDashboardPage(recs){
     pivotLegend.appendChild(pitem);
   }
 
-  var allDatesForPivot = Object.keys(agg.byDate).map(Number).sort(function(a,b){return a-b;});
-  var todayDate = allDatesForPivot.length ? allDatesForPivot[allDatesForPivot.length-1] : null;
-  var yesterdayDate = allDatesForPivot.length > 1 ? allDatesForPivot[allDatesForPivot.length-2] : null;
-  var todayRecs = todayDate !== null ? recs.filter(function(r){ return r[1] === todayDate; }) : [];
-  var yesterdayRecs = yesterdayDate !== null ? recs.filter(function(r){ return r[1] === yesterdayDate; }) : [];
-  var todayTotal = todayRecs.reduce(function(s,r){ return s + r[2]; }, 0);
-  var yesterdayTotal = yesterdayRecs.reduce(function(s,r){ return s + r[2]; }, 0);
-  renderReasonAgingPivot($('#reason-pivot-today'), todayRecs, {
+  // "Hari Ini" = the CURRENT full portfolio (recs, already role-scoped),
+  // broken down by reason x aging bucket — NOT narrowed to documents whose
+  // own document-date happens to equal "today". Narrowing by date doesn't
+  // work here: a document's Aging is itself (roughly) "now minus its own
+  // date", so filtering to one specific date collapses every row into a
+  // single aging bucket (that date's aging), which is what was showing up
+  // as a broken-looking, single-column table. The fix is the same one
+  // already applied to the "Tren Tanggal x Aging" table: show the real
+  // state of the whole portfolio, not a date-sliced fragment of it.
+  var todayBuilt = buildReasonRowsFromRecords(recs);
+  var todaySnapDate = SNAPSHOTS.length ? isoToSerial(SNAPSHOTS[SNAPSHOTS.length-1].date) : maxDateSerial();
+  renderReasonAgingPivot($('#reason-pivot-today'), todayBuilt, {
     label: 'Hari Ini',
-    dateText: todayDate !== null ? fmtDateFull(todayDate) : '',
-    totalText: todayDate !== null ? fmtIDR(todayTotal) : ''
+    dateText: fmtDateFull(todaySnapDate),
+    totalText: fmtIDR(todayBuilt.grandTotal)
   });
-  renderReasonAgingPivot($('#reason-pivot-yesterday'), yesterdayRecs, {
-    label: 'Kemarin',
-    dateText: yesterdayDate !== null ? fmtDateFull(yesterdayDate) : '',
-    totalText: yesterdayDate !== null ? fmtIDR(yesterdayTotal) : ''
-  });
+
+  var reasonSnapEl = $('#reason-pivot-yesterday');
+  if(SESSION.role === 'vendor'){
+    // The persisted "Kemarin" snapshot is a whole-portfolio (all-vendor)
+    // breakdown — showing it here would leak other vendors' totals, so we
+    // explain why it's omitted instead of silently showing nothing.
+    renderReasonAgingPivot(reasonSnapEl, null, {
+      label: 'Kemarin',
+      emptyText: 'Perbandingan dengan hari sebelumnya hanya tersedia untuk Admin/Owner (datanya gabungan seluruh vendor).'
+    });
+  } else {
+    var reasonDates = Object.keys(REASON_SNAPSHOTS).sort();
+    if(reasonDates.length >= 2){
+      var yestISO = reasonDates[reasonDates.length-2];
+      var yestBuilt = buildReasonRowsFromSnapshot(REASON_SNAPSHOTS[yestISO]);
+      renderReasonAgingPivot(reasonSnapEl, yestBuilt, {
+        label: 'Kemarin',
+        dateText: fmtDateFull(isoToSerial(yestISO)),
+        totalText: fmtIDR(yestBuilt.grandTotal)
+      });
+    } else {
+      renderReasonAgingPivot(reasonSnapEl, null, {
+        label: 'Kemarin',
+        emptyText: !SHEETS_CONFIG.url
+          ? 'Google Sheets belum terhubung, sehingga histori harian belum bisa disimpan.'
+          : 'Belum ada histori tersimpan. Histori akan mulai terkumpul setelah upload berikutnya.'
+      });
+    }
+  }
 
   renderTable($('#docs-table'), recs);
 }
@@ -1871,6 +1937,7 @@ function persistData(newData){
   postToSheets(newData).then(function(res){
     if(res && res.ok){
       if(res.dailySnapshots) SNAPSHOTS = res.dailySnapshots;
+      if(res.reasonSnapshots) REASON_SNAPSHOTS = groupReasonSnapshots(res.reasonSnapshots);
       SYNC_STATE.status = 'ok';
       SYNC_STATE.at = new Date();
       toast('Tersimpan ke Google Sheets — semua perangkat &amp; vendor kini melihat data terbaru.', 'good');
@@ -1930,6 +1997,7 @@ function fetchFromSheets(){
       SYNC_STATE.status = 'ok';
       SYNC_STATE.at = new Date();
       if(res.dailySnapshots) SNAPSHOTS = res.dailySnapshots;
+      if(res.reasonSnapshots) REASON_SNAPSHOTS = groupReasonSnapshots(res.reasonSnapshots);
       return res.data; // null if the Sheet has no upload yet
     }
     SYNC_STATE.status = 'error';
