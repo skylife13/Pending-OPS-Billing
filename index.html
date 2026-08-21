@@ -521,7 +521,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-08-21 05:52 UTC</div>
+    <div class="build-stamp">Versi build: 2026-08-21 06:02 UTC</div>
   </div>
 </div>
 
@@ -546,7 +546,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-08-21 05:52 UTC</div>
+      <div class="build-stamp">v 2026-08-21 06:02 UTC</div>
     </div>
   </aside>
 
@@ -1231,7 +1231,16 @@ function renderRankBars(container, entries, colorVar, opts){
   var maxV = Math.max.apply(null, top.map(function(e){return e.value;})) || 1;
   var rowH = 30, gap = 8;
   var labelW = opts.labelWidth || 168;
-  var W = 460, padR = 56;
+  // The viewBox width must track the container's actual rendered width, not
+  // a fixed constant: the SVG is styled width:100%/height:auto, so with a
+  // fixed viewBox width the browser scales the whole chart (bars, text, row
+  // height) up to match the container's aspect ratio. That's harmless when
+  // this panel sits in a 3-column grid (~460px wide) but blows everything up
+  // to 2-3x when the panel spans the full row instead — as it does for
+  // vendor logins, where the vendor-ranking panel is hidden and the reason
+  // panel is stretched to fill its place. Reading the container's own width
+  // keeps 1 viewBox unit == 1 real pixel regardless of how wide it ends up.
+  var W = container.clientWidth || 460, padR = 56;
   var barAreaW = W - labelW - padR;
   var H = top.length * (rowH+gap) - gap + 8;
 
