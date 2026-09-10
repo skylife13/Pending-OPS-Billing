@@ -467,6 +467,35 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
 .cred-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
 .cred-table tr:last-child td{border-bottom:none}
 
+/* ===== Modal (export dialog) ===== */
+.modal-backdrop{
+  position:fixed;inset:0;z-index:90;background:rgba(11,11,11,0.45);
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.modal-card{
+  width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;box-shadow:var(--shadow-pop);overflow:hidden;
+}
+.modal-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 18px;border-bottom:1px solid var(--border);
+}
+.modal-head h3{font-size:14.5px}
+.modal-close{
+  width:26px;height:26px;border-radius:8px;border:none;background:transparent;
+  color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.modal-close:hover{background:var(--surface-2);color:var(--text-primary)}
+.modal-body{padding:16px 18px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px}
+.modal-hint{font-size:11.5px;color:var(--text-muted);line-height:1.6;margin:0}
+.modal-foot{
+  display:flex;align-items:center;justify-content:flex-end;gap:10px;
+  padding:14px 18px;border-top:1px solid var(--border);background:var(--surface-2);
+}
+
 /* toast */
 #toast-host{position:fixed;bottom:20px;right:20px;z-index:100;display:flex;flex-direction:column;gap:8px;max-width:340px}
 .toast{
@@ -524,7 +553,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-09-07 01:58 UTC</div>
+    <div class="build-stamp">Versi build: 2026-09-09 10:00 UTC</div>
   </div>
 </div>
 
@@ -549,7 +578,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-09-07 01:58 UTC</div>
+      <div class="build-stamp">v 2026-09-09 10:00 UTC</div>
     </div>
   </aside>
 
@@ -562,6 +591,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span class="role-pill"><span class="dot"></span><span id="role-pill-text">role</span></span>
+          <button id="export-image-btn" class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg> Ekspor Gambar</button>
           <button id="export-csv-btn" class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m6 12 6 6 6-6"/><path d="M4 20h16"/></svg> Ekspor CSV</button>
         </div>
       </div>
@@ -599,11 +629,11 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
           </div>
         </div>
 
-        <div class="panel" style="margin-top:18px">
+        <div id="trend-panel" class="panel" style="margin-top:18px">
           <div class="panel-head">
             <div>
-              <h3>Tren Outstanding per Tanggal Delivery</h3>
-              <div class="sub">Ditumpuk berdasarkan kelompok usia (aging) — arahkan kursor untuk detail</div>
+              <h3>Trend SBNI National (Pending Delivery vs Sales)</h3>
+              <div class="sub">Histori total Pending Delivery &amp; Pending Sales secara nasional (seluruh cabang &amp; vendor), satu titik per tanggal upload/sinkronisasi ke Google Sheets — tersimpan permanen, jadi progressnya benar-benar terlihat dari waktu ke waktu. Arahkan kursor untuk detail.</div>
             </div>
             <div id="trend-legend" class="legend"></div>
           </div>
@@ -699,6 +729,25 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
           <div id="access-content"></div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+<div id="export-modal-backdrop" class="modal-backdrop hidden">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
+    <div class="modal-head">
+      <h3 id="export-modal-title">Ekspor Ringkasan sebagai Gambar</h3>
+      <button id="export-modal-close" class="modal-close" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-field" id="export-branch-field">
+        <label for="export-branch-select">Cabang</label>
+        <select id="export-branch-select" class="filter-select" style="width:100%"></select>
+      </div>
+      <p class="modal-hint">Gambar PNG 1 halaman berisi ringkasan KPI, komposisi aging, peringkat vendor, kategori/reason, dan toko yang perlu diperhatikan &mdash; untuk cabang yang dipilih.</p>
+    </div>
+    <div class="modal-foot">
+      <button id="export-modal-cancel" class="btn">Batal</button>
+      <button id="export-modal-confirm" class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m6 12 6 6 6-6"/><path d="M4 20h16"/></svg> Unduh PNG</button>
     </div>
   </div>
 </div>
@@ -1172,31 +1221,67 @@ function niceMax(v){
   return step * mag;
 }
 
-/* ---- Stacked area trend chart ---- */
-function renderTrendChart(container, recs){
+/* ---- National status trend: Pending Delivery vs Pending Sales ----
+   Unlike the record-based charts elsewhere on this page, this one is NOT
+   derived from the currently-loaded/filtered record set — it's built from
+   STATUS_SNAPSHOTS, the permanent day-by-day history saved to Google
+   Sheets on every sync (see renderDateAgingTable's header comment for the
+   same pattern). That's what makes it a real "progress over time" view:
+   two lines, national totals, one per Status Surat Jalan, so an Admin/
+   Owner can see at a glance whether the pending pile is actually shrinking
+   day over day — not just its current-moment composition. Whole-portfolio
+   totals across every vendor and branch, with no way to scope them down to
+   one vendor's slice, so this chart is Admin/Owner only (see
+   renderDashboardPage). ---- */
+function renderStatusTrendChart(container){
   container.innerHTML = '';
-  var agg = aggregate(recs);
-  var dates = Object.keys(agg.byDate).map(Number).sort(function(a,b){return a-b;});
-  var W = 960, H = 260, padL = 52, padR = 16, padT = 16, padB = 30;
-  var innerW = W - padL - padR, innerH = H - padT - padB;
-
   var wrap = el('div', {class:'chart-wrap'});
   var tooltip = el('div', {class:'tooltip'});
   wrap.appendChild(tooltip);
 
-  if(dates.length === 0){
-    wrap.appendChild(el('div', {style:'padding:40px;text-align:center;color:var(--text-muted);font-size:12.5px'}, ['Tidak ada data pada rentang filter ini.']));
+  if(!SHEETS_CONFIG || !SHEETS_CONFIG.url){
+    wrap.appendChild(el('div', {style:'padding:40px;text-align:center;color:var(--text-muted);font-size:12.5px'},
+      ['Google Sheets belum terhubung, sehingga histori harian belum bisa disimpan. Lihat halaman Upload Data untuk menghubungkan.']));
     container.appendChild(wrap);
     return;
   }
 
-  // totals per date for y scale
-  var totals = dates.map(function(d){ return agg.byDate[d].reduce(function(a,b){return a+b;},0); });
-  var yMax = niceMax(Math.max.apply(null, totals) * 1.12 || 10);
-  var xMin = dates[0], xMax = dates[dates.length-1];
+  // Every date here is a day an upload was synced to Google Sheets — there's
+  // no meaningful "zoom window" the way a daily-granularity trend would
+  // have, so this simply plots every upload date on record, oldest to
+  // newest.
+  var isoDates = Object.keys(STATUS_SNAPSHOTS).sort();
+  var serialByIso = {}, serials = [];
+  isoDates.forEach(function(iso){
+    var s = isoToSerial(iso);
+    if(s === null) return;
+    serialByIso[s] = iso;
+    serials.push(s);
+  });
+  serials.sort(function(a,b){ return a-b; });
+
+  if(serials.length === 0){
+    wrap.appendChild(el('div', {style:'padding:40px;text-align:center;color:var(--text-muted);font-size:12.5px'},
+      ['Belum ada histori tersimpan. Histori akan mulai terkumpul setelah upload berikutnya — grafik ini butuh beberapa hari data untuk mulai menunjukkan progress.']));
+    container.appendChild(wrap);
+    return;
+  }
+
+  function sumBucket(arr){ return (arr||[0,0,0,0,0,0,0]).reduce(function(a,b){return a+b;},0); }
+  var deliv = [], sales = [];
+  serials.forEach(function(s){
+    var perStatus = STATUS_SNAPSHOTS[serialByIso[s]] || {};
+    deliv.push(sumBucket(perStatus[0]));
+    sales.push(sumBucket(perStatus[1]));
+  });
+
+  var W = 960, H = 260, padL = 52, padR = 16, padT = 16, padB = 30;
+  var innerW = W - padL - padR, innerH = H - padT - padB;
+  var yMax = niceMax(Math.max.apply(null, deliv.concat(sales)) * 1.15 || 10);
+  var xMin = serials[0], xMax = serials[serials.length-1];
   var xSpan = Math.max(1, xMax - xMin);
 
-  function xPos(d){ return padL + (dates.length===1 ? innerW/2 : (d - xMin) / xSpan * innerW); }
+  function xPos(d){ return padL + (serials.length===1 ? innerW/2 : (d - xMin) / xSpan * innerW); }
   function yPos(v){ return padT + innerH - (v / yMax * innerH); }
 
   var svg = svgEl('svg', {class:'chart-svg', viewBox:'0 0 '+W+' '+H, preserveAspectRatio:'none', width:'100%', height:H});
@@ -1212,29 +1297,24 @@ function renderTrendChart(container, recs){
     svg.appendChild(lbl);
   }
 
-  // stacked areas (bucket 1..7)
-  var cum = dates.map(function(){ return 0; });
-  for(var b=1;b<=7;b++){
-    var topPts = [], basePts = [];
-    dates.forEach(function(d, idx){
-      var v = agg.byDate[d][b];
-      var base = cum[idx];
-      var top = base + v;
-      cum[idx] = top;
-      topPts.push([xPos(d), yPos(top)]);
-      basePts.push([xPos(d), yPos(base)]);
+  function drawSeries(vals, colorVar){
+    var pts = serials.map(function(d, idx){ return [xPos(d), yPos(vals[idx])]; });
+    var pathD = 'M' + pts.map(function(p){ return p[0]+','+p[1]; }).join('L');
+    svg.appendChild(svgEl('path', {d:pathD, fill:'none', stroke:'var('+colorVar+')', 'stroke-width':2.5, 'stroke-linejoin':'round', 'stroke-linecap':'round'}));
+    pts.forEach(function(p){
+      svg.appendChild(svgEl('circle', {cx:p[0], cy:p[1], r:3, fill:'var('+colorVar+')', stroke:'var(--surface)', 'stroke-width':1.5}));
     });
-    var pathD = 'M' + topPts.map(function(p){return p[0]+','+p[1];}).join('L');
-    pathD += 'L' + basePts.slice().reverse().map(function(p){return p[0]+','+p[1];}).join('L') + 'Z';
-    var path = svgEl('path', {d:pathD, fill:'var('+RISK_VARS[b-1]+')', opacity:'0.88'});
-    svg.appendChild(path);
   }
+  // Pending Sales drawn first so Pending Delivery's line/dots sit on top —
+  // Pending Delivery is usually the one people are watching most closely.
+  drawSeries(sales, '--accent-2');
+  drawSeries(deliv, '--accent');
 
   // baseline + x labels (sparse)
   svg.appendChild(svgEl('line', {class:'baseline', x1:padL, x2:W-padR, y1:padT+innerH, y2:padT+innerH}));
-  var labelEvery = Math.max(1, Math.ceil(dates.length / 7));
-  dates.forEach(function(d, idx){
-    if(idx % labelEvery === 0 || idx === dates.length-1){
+  var labelEvery = Math.max(1, Math.ceil(serials.length / 7));
+  serials.forEach(function(d, idx){
+    if(idx % labelEvery === 0 || idx === serials.length-1){
       var t = svgEl('text', {class:'axis-label', x:xPos(d), y:H-8, 'text-anchor':'middle'});
       t.textContent = fmtDateShort(d);
       svg.appendChild(t);
@@ -1244,15 +1324,13 @@ function renderTrendChart(container, recs){
   // hover crosshair
   var crossLine = svgEl('line', {class:'hover-crosshair', y1:padT, y2:padT+innerH});
   svg.appendChild(crossLine);
-  var hoverDot = svgEl('circle', {r:3.5, fill:'var(--text-primary)', opacity:0, stroke:'var(--surface)', 'stroke-width':2});
-  svg.appendChild(hoverDot);
 
   var overlay = svgEl('rect', {x:padL, y:padT, width:innerW, height:innerH, fill:'transparent', style:'cursor:crosshair'});
   svg.appendChild(overlay);
 
   function nearestIdx(mx){
     var best=0, bd=Infinity;
-    dates.forEach(function(d, idx){
+    serials.forEach(function(d, idx){
       var dx = Math.abs(xPos(d) - mx);
       if(dx < bd){ bd = dx; best = idx; }
     });
@@ -1263,17 +1341,12 @@ function renderTrendChart(container, recs){
     var scaleX = W / rect.width;
     var mx = (evt.clientX - rect.left) * scaleX;
     var idx = nearestIdx(mx);
-    var d = dates[idx];
+    var d = serials[idx];
     var x = xPos(d);
     crossLine.setAttribute('x1', x); crossLine.setAttribute('x2', x); crossLine.style.opacity = 1;
-    hoverDot.setAttribute('cx', x); hoverDot.setAttribute('cy', yPos(totals[idx])); hoverDot.style.opacity = 1;
-    var rows = '';
-    for(var b=7;b>=1;b--){
-      var v = agg.byDate[d][b];
-      if(!v) continue;
-      rows += '<div class="t-row"><span style="display:flex;align-items:center;gap:6px"><span class="t-sw" style="background:var('+RISK_VARS[b-1]+')"></span>'+AGING_SHORT[b-1]+'</span><span class="tnum">'+fmtCompact(v)+'</span></div>';
-    }
-    tooltip.innerHTML = '<div class="t-title">'+fmtDateFull(d)+' &middot; Total '+fmtCompact(totals[idx])+'</div>' + rows;
+    var rows = '<div class="t-row"><span style="display:flex;align-items:center;gap:6px"><span class="t-sw" style="background:var(--accent)"></span>Pending Delivery</span><span class="tnum">'+fmtCompact(deliv[idx])+'</span></div>'
+             + '<div class="t-row"><span style="display:flex;align-items:center;gap:6px"><span class="t-sw" style="background:var(--accent-2)"></span>Pending Sales</span><span class="tnum">'+fmtCompact(sales[idx])+'</span></div>';
+    tooltip.innerHTML = '<div class="t-title">'+fmtDateFull(d)+'</div>' + rows;
     var cw = wrap.clientWidth;
     var leftPct = (x / W) * cw;
     tooltip.style.left = Math.min(Math.max(leftPct, 90), cw-90) + 'px';
@@ -1282,7 +1355,7 @@ function renderTrendChart(container, recs){
     tooltip.classList.add('show');
   }
   function hideTip(){
-    crossLine.style.opacity = 0; hoverDot.style.opacity = 0; tooltip.classList.remove('show');
+    crossLine.style.opacity = 0; tooltip.classList.remove('show');
   }
   overlay.addEventListener('mousemove', showTip);
   overlay.addEventListener('mouseleave', hideTip);
@@ -1291,6 +1364,29 @@ function renderTrendChart(container, recs){
   overlay.addEventListener('touchend', hideTip);
 
   wrap.appendChild(svg);
+
+  // Progress footer — last vs previous snapshot, per series. Mirrors the
+  // "Progress" row at the bottom of the Tren Tanggal x Aging table, just
+  // split per status instead of grand-total-only.
+  if(serials.length >= 2){
+    function deltaChip(label, colorVar, last, prev){
+      var delta = last - prev;
+      var flat = Math.abs(delta) < 1;
+      var up = delta > 0;
+      var cls = flat ? 'flat' : (up ? 'up' : 'down');
+      var arrow = flat ? '→' : (up ? '↑' : '↓');
+      var chip = el('div', {class:'legend-item'});
+      chip.appendChild(el('span', {class:'legend-swatch', style:'background:var('+colorVar+')'}));
+      chip.appendChild(document.createTextNode(label+' '));
+      chip.appendChild(el('span', {class:'delta '+cls}, [arrow+' '+fmtCompact(Math.abs(delta))+' vs sebelumnya']));
+      return chip;
+    }
+    var footRow = el('div', {style:'display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:12px'});
+    footRow.appendChild(deltaChip('Pending Delivery', '--accent', deliv[deliv.length-1], deliv[deliv.length-2]));
+    footRow.appendChild(deltaChip('Pending Sales', '--accent-2', sales[sales.length-1], sales[sales.length-2]));
+    wrap.appendChild(footRow);
+  }
+
   container.appendChild(wrap);
 }
 
@@ -2102,15 +2198,27 @@ function renderDashboardPage(recs){
     }
   }
 
-  renderTrendChart($('#trend-chart'), recs);
+  // Trend SBNI National (Pending Delivery vs Pending Sales) — built from the
+  // permanent Google Sheets snapshot history, not the current record set, so
+  // it's whole-portfolio only and hidden for vendor logins (same reasoning
+  // as the Tren Tanggal x Aging panel further down).
+  var trendPanel = $('#trend-panel');
+  if(SESSION.role === 'vendor'){
+    trendPanel.classList.add('hidden');
+  } else {
+    trendPanel.classList.remove('hidden');
+    renderStatusTrendChart($('#trend-chart'));
 
-  var bucketLegend = $('#trend-legend');
-  bucketLegend.innerHTML = '';
-  for(var b=7;b>=1;b--){
-    var item = el('div', {class:'legend-item'});
-    item.appendChild(el('span', {class:'legend-swatch', style:'background:var('+RISK_VARS[b-1]+')'}));
-    item.appendChild(document.createTextNode(AGING_SHORT[b-1]));
-    bucketLegend.appendChild(item);
+    var statusLegend = $('#trend-legend');
+    statusLegend.innerHTML = '';
+    var delivItem = el('div', {class:'legend-item'});
+    delivItem.appendChild(el('span', {class:'legend-swatch', style:'background:var(--accent)'}));
+    delivItem.appendChild(document.createTextNode('Pending Delivery'));
+    statusLegend.appendChild(delivItem);
+    var salesItem = el('div', {class:'legend-item'});
+    salesItem.appendChild(el('span', {class:'legend-swatch', style:'background:var(--accent-2)'}));
+    salesItem.appendChild(document.createTextNode('Pending Sales'));
+    statusLegend.appendChild(salesItem);
   }
 
   renderAgingBars($('#aging-chart'), recs);
@@ -2658,6 +2766,292 @@ function exportCSV(recs){
 }
 
 /* ============================================================
+   Export: 1-page summary image (PNG)
+   ============================================================ */
+// Hard-coded (not var(--...)) on purpose: the exported SVG is decoded as a
+// standalone image resource (via an <img> pointed at a Blob URL) — outside
+// this document's own stylesheet cascade — so CSS custom properties
+// wouldn't resolve there. Mirrors the light-theme palette in style.css so
+// the exported report reads the same regardless of the viewer's OS theme,
+// like a printed page would.
+var SUMMARY_COLORS = {
+  page:'#f9f9f7', surface:'#ffffff', border:'#e3e2db', borderStrong:'#d2d0c6',
+  textPrimary:'#0b0b0b', textSecondary:'#52514e', textMuted:'#898781',
+  accent:'#2a78d6', accent2:'#eb6834', critical:'#d03b3b',
+  risk:['#0ca30c','#57a208','#a2a204','#eda100','#e37f14','#da5d27','#d03b3b']
+};
+// A generic system font stack rather than the app's loaded webfonts
+// (Manrope/Public Sans) — a detached SVG decoded as an <img> doesn't have
+// access to the page's <link> stylesheets, so a named webfont would
+// silently fall back anyway. Keeping it generic avoids relying on that.
+var SUMMARY_FONT = 'Arial, Helvetica, sans-serif';
+
+function svgText(x, y, str, opts){
+  opts = opts || {};
+  var attrs = {
+    x:x, y:y,
+    'font-family': SUMMARY_FONT,
+    'font-size': opts.size || 12,
+    'font-weight': opts.weight || 400,
+    fill: opts.fill || SUMMARY_COLORS.textPrimary,
+    'text-anchor': opts.anchor || 'start'
+  };
+  if(opts.letterSpacing) attrs['letter-spacing'] = opts.letterSpacing;
+  var t = svgEl('text', attrs);
+  t.textContent = str == null ? '' : String(str);
+  return t;
+}
+function svgRect(x, y, w, h, opts){
+  opts = opts || {};
+  return svgEl('rect', {
+    x:x, y:y, width:w, height:Math.max(h,0),
+    rx: opts.rx || 0,
+    fill: opts.fill || 'none',
+    stroke: opts.stroke || 'none',
+    'stroke-width': opts.strokeWidth || 1
+  });
+}
+function truncateLabel(s, n){
+  s = (s == null ? '' : String(s)).trim();
+  return s.length > n ? s.slice(0, n-1) + '…' : s;
+}
+function fmtDateTimeID(d){
+  var hh = String(d.getHours()).padStart(2,'0');
+  var mm = String(d.getMinutes()).padStart(2,'0');
+  return d.getDate() + ' ' + MONTHS_ID[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+}
+// Rough auto-fit for the big KPI value text: fmtIDR() strings can run long
+// (e.g. "Rp 10.756.628.465"), and unlike the on-screen .kpi-value (which
+// just wraps/shrinks via CSS if needed), this is a fixed-size SVG card with
+// no reflow — so scale the font down by estimated string width instead of
+// letting it overrun the card.
+function kpiValueFontSize(str, maxW){
+  var base = 19;
+  var estWidth = String(str).length * base * 0.56;
+  if(estWidth <= maxW) return base;
+  return Math.max(12, Math.round((maxW / (String(str).length * 0.56)) * 10) / 10);
+}
+
+// A single horizontal ranking list (title + up to `limit` bars), drawn at
+// absolute coordinates for the static export image — same visual language
+// as renderRankBars() but non-interactive and hand-laid-out, since the
+// whole report is one fixed composition rather than a resizable panel.
+// Returns the total height consumed so the caller can stack sections.
+function drawRankListSVG(nodes, x, y, w, title, entries, colorHex, limit){
+  nodes.push(svgText(x, y, title, {size:13, weight:700}));
+  var top = entries.slice(0, limit || 5);
+  var top0 = y + 22;
+  if(top.length === 0){
+    nodes.push(svgText(x, top0+14, 'Tidak ada data.', {size:11, fill:SUMMARY_COLORS.textMuted}));
+    return 22 + 30;
+  }
+  var rowH = 26, gap = 8;
+  var labelW = Math.min(200, w * 0.4);
+  var padR = 64;
+  var barAreaW = Math.max(w - labelW - padR, 20);
+  var maxV = 0;
+  top.forEach(function(e){ if(e.value > maxV) maxV = e.value; });
+  maxV = maxV || 1;
+  top.forEach(function(e, i){
+    var ry = top0 + i*(rowH+gap);
+    nodes.push(svgText(x, ry+rowH/2+4, truncateLabel(e.name, 30), {size:11, weight:600, fill:SUMMARY_COLORS.textSecondary}));
+    var barX = x + labelW;
+    var bw = Math.max((e.value/maxV) * barAreaW, 3);
+    nodes.push(svgRect(barX, ry+5, bw, rowH-10, {rx:5, fill:colorHex}));
+    nodes.push(svgText(barX+barAreaW+10, ry+rowH/2+4, fmtCompact(e.value), {size:10.5, weight:700, fill:SUMMARY_COLORS.textPrimary}));
+  });
+  return 22 + top.length*(rowH+gap) - gap + 6;
+}
+
+// Builds the whole 1-page summary as a single, self-contained <svg> node —
+// same hand-rolled-SVG approach used by every other chart in this app
+// (renderAgingBars, renderRankBars, renderStatusTrendChart), just laid out
+// once as a fixed report instead of a resizable panel. `recs` must already
+// be scoped (see exportSummaryImage) — this only lays out and draws.
+function buildSummarySVG(scopeLabel, recs){
+  var W = 1000, padX = 44, innerW = W - padX*2;
+  var nodes = [];
+  var cursor = 46;
+
+  // ---- Header ----
+  nodes.push(svgRect(padX, cursor-30, 34, 34, {rx:9, fill:SUMMARY_COLORS.accent}));
+  nodes.push(svgText(padX+17, cursor-8, 'S', {size:16, weight:800, fill:'#ffffff', anchor:'middle'}));
+  nodes.push(svgText(padX+46, cursor-14, 'SBNI Ops Center', {size:19, weight:800}));
+  nodes.push(svgText(padX+46, cursor+7, 'Ringkasan Aging & POD Reconciliation', {size:11, fill:SUMMARY_COLORS.textMuted}));
+  nodes.push(svgText(W-padX, cursor-14, scopeLabel, {size:13.5, weight:800, fill:SUMMARY_COLORS.accent, anchor:'end'}));
+  nodes.push(svgText(W-padX, cursor+7, 'Digenerate ' + fmtDateTimeID(new Date()), {size:10.5, fill:SUMMARY_COLORS.textMuted, anchor:'end'}));
+  cursor += 22;
+  nodes.push(svgRect(padX, cursor, innerW, 1, {fill:SUMMARY_COLORS.border}));
+  cursor += 30;
+
+  // ---- KPI cards (mirrors renderKPIs()'s exact math, laid out for print) ----
+  var agg = aggregate(recs);
+  var progress = computeProgress(recs);
+  var critical = agg.byBucket[5]+agg.byBucket[6]+agg.byBucket[7];
+  var criticalPct = agg.total ? (critical/agg.total*100) : 0;
+  var sumAging = 0;
+  recs.forEach(function(r){ sumAging += r[5]; });
+  var avgDays = recs.length ? Math.round(sumAging/recs.length) : 0;
+
+  var fourthCard;
+  if(SESSION.role === 'vendor'){
+    var maxAging = recs.length ? Math.max.apply(null, recs.map(function(r){ return r[5]; })) : 0;
+    var avgPerDoc = recs.length ? agg.total / recs.length : 0;
+    fourthCard = { label:'Rata-rata / Dokumen', value: fmtIDR(avgPerDoc), sub:'dokumen tertua: '+maxAging+' hari' };
+  } else {
+    fourthCard = { label:'Pending Delivery', value: fmtIDR(agg.byStatus[0]||0), sub:'vs Pending Sales '+fmtCompact(agg.byStatus[1]||0) };
+  }
+  var progressSub = '';
+  if(progress){
+    var up = progress.delta > 0, flat = Math.abs(progress.delta) < 1;
+    var arrow = flat ? '→' : (up ? '↑' : '↓');
+    progressSub = arrow+' '+fmtCompact(Math.abs(progress.delta))+' vs '+fmtDateShort(progress.prev);
+  }
+  var kpiCards = [
+    { label:'Total Outstanding', value: fmtIDR(agg.total), sub: fmtInt(agg.count)+' dokumen'+(progressSub?'  ·  '+progressSub:'') },
+    { label:'>90 Hari (Kritis)', value: fmtIDR(critical), sub: criticalPct.toFixed(1)+'% dari total', accent:SUMMARY_COLORS.critical },
+    { label:'Rata-rata Aging', value: avgDays+' hari', sub: 'seluruh dokumen ter-filter' },
+    fourthCard
+  ];
+  var cardGap = 14, cardW = (innerW - cardGap*3)/4, cardH = 96;
+  kpiCards.forEach(function(c, i){
+    var cx = padX + i*(cardW+cardGap);
+    nodes.push(svgRect(cx, cursor, cardW, cardH, {rx:12, fill:SUMMARY_COLORS.surface, stroke:SUMMARY_COLORS.border}));
+    nodes.push(svgText(cx+14, cursor+24, c.label.toUpperCase(), {size:9.5, weight:700, fill:SUMMARY_COLORS.textMuted, letterSpacing:'0.4px'}));
+    nodes.push(svgText(cx+14, cursor+56, c.value, {size:kpiValueFontSize(c.value, cardW-28), weight:800, fill:c.accent||SUMMARY_COLORS.textPrimary}));
+    nodes.push(svgText(cx+14, cursor+78, truncateLabel(c.sub, 42), {size:10, fill:SUMMARY_COLORS.textSecondary}));
+  });
+  cursor += cardH + 34;
+
+  // ---- Aging composition ----
+  nodes.push(svgText(padX, cursor, 'Komposisi Aging', {size:13.5, weight:700}));
+  nodes.push(svgText(W-padX, cursor, 'Total nilai per bucket', {size:10.5, fill:SUMMARY_COLORS.textMuted, anchor:'end'}));
+  cursor += 20;
+  var chartH = 130, nBars = 7, bgap = 10;
+  var barW = (innerW - bgap*(nBars-1)) / nBars;
+  var agingVals = [];
+  for(var b=1;b<=7;b++) agingVals.push(agg.byBucket[b]);
+  var maxAgingV = 0;
+  agingVals.forEach(function(v){ if(v>maxAgingV) maxAgingV = v; });
+  maxAgingV = maxAgingV || 1;
+  agingVals.forEach(function(v, i){
+    var bx = padX + i*(barW+bgap);
+    var bh = (v/maxAgingV) * chartH;
+    var by = cursor + chartH - bh;
+    nodes.push(svgRect(bx, by, barW, v>0?Math.max(bh,2):0, {rx:4, fill:SUMMARY_COLORS.risk[i]}));
+    if(v > 0) nodes.push(svgText(bx+barW/2, by-8, fmtCompact(v), {size:10, weight:700, fill:SUMMARY_COLORS.textSecondary, anchor:'middle'}));
+    nodes.push(svgText(bx+barW/2, cursor+chartH+18, AGING_SHORT[i].replace(' hari','h'), {size:10, weight:600, fill:SUMMARY_COLORS.textSecondary, anchor:'middle'}));
+  });
+  nodes.push(svgRect(padX, cursor+chartH, innerW, 1, {fill:SUMMARY_COLORS.borderStrong}));
+  cursor += chartH + 44;
+
+  // ---- Peringkat Vendor / Kategori-Reason (two columns) ----
+  var vendorEntries = Object.keys(agg.byVendor).map(function(k){ return {name: DATA.vendors[k], value: agg.byVendor[k]}; })
+    .filter(function(e){ return e.name !== 'Unassigned'; })
+    .sort(function(a,b){ return b.value - a.value; });
+  var reasonEntries = Object.keys(agg.byReason).map(function(k){ return {name: DATA.reasons[k], value: agg.byReason[k]}; })
+    .sort(function(a,b){ return b.value - a.value; });
+  var colGap = 24, colW = (innerW - colGap) / 2;
+  var listTop = cursor;
+  var vH = drawRankListSVG(nodes, padX, listTop, colW, 'Peringkat Vendor', vendorEntries, SUMMARY_COLORS.accent, 5);
+  var rH = drawRankListSVG(nodes, padX+colW+colGap, listTop, colW, 'Kategori / Reason', reasonEntries, SUMMARY_COLORS.accent2, 5);
+  cursor += Math.max(vH, rH) + 30;
+
+  // ---- Toko Perlu Diperhatikan ----
+  var storeEntries = topStoresByOutstanding(recs);
+  var sH = drawRankListSVG(nodes, padX, cursor, innerW, 'Toko Perlu Diperhatikan', storeEntries, SUMMARY_COLORS.risk[6], 5);
+  cursor += sH + 30;
+
+  // ---- Footer ----
+  nodes.push(svgRect(padX, cursor, innerW, 1, {fill:SUMMARY_COLORS.border}));
+  cursor += 20;
+  nodes.push(svgText(padX, cursor, 'SBNI Ops Center — ringkasan otomatis. Lihat Detail Dokumen di dashboard untuk data lengkap.', {size:9.5, fill:SUMMARY_COLORS.textMuted}));
+  cursor += 24;
+
+  var H = cursor;
+  var svg = svgEl('svg', {xmlns:SVGNS, viewBox:'0 0 '+W+' '+H, width:W, height:H});
+  svg.appendChild(svgRect(0, 0, W, H, {fill:SUMMARY_COLORS.page}));
+  nodes.forEach(function(node){ svg.appendChild(node); });
+  return { svg: svg, width: W, height: H };
+}
+
+// Serializes an in-memory <svg> node to a PNG and triggers a download — no
+// image-export library needed: the SVG is inlined as a Blob, decoded via an
+// <img>, then drawn onto a <canvas> that toBlob() can read back as PNG.
+// Runs entirely client-side; nothing is uploaded anywhere.
+function downloadSvgAsPng(svgNode, W, H, filename){
+  try{
+    var scale = 2; // export at 2x so the PNG stays crisp when shared/printed
+    var xml = new XMLSerializer().serializeToString(svgNode);
+    var svgBlob = new Blob([xml], {type:'image/svg+xml;charset=utf-8'});
+    var url = URL.createObjectURL(svgBlob);
+    var img = new Image();
+    img.onload = function(){
+      var canvas = document.createElement('canvas');
+      canvas.width = W * scale;
+      canvas.height = H * scale;
+      var ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, W, H);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(function(blob){
+        if(!blob){ toast('Gagal membuat file gambar.', 'error'); return; }
+        var link = document.createElement('a');
+        var dlUrl = URL.createObjectURL(blob);
+        link.href = dlUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function(){ URL.revokeObjectURL(dlUrl); }, 2000);
+        toast('Gambar ringkasan diunduh.', 'good');
+      }, 'image/png');
+    };
+    img.onerror = function(){
+      URL.revokeObjectURL(url);
+      toast('Gagal membuat gambar ringkasan.', 'error');
+    };
+    img.src = url;
+  }catch(err){
+    toast('Gagal mengekspor gambar: ' + (err.message||err), 'error');
+  }
+}
+
+function exportSummaryImage(branchScope){
+  // Deliberately built from scopedRecords() — the same clean base pool
+  // every other panel is built from (blank-reason excluded, vendor-role
+  // scoped) — plus only the branch choice, NOT whatever aging/status/search
+  // filters happen to be active on screen right now. This is meant to be a
+  // standalone report handed to someone else, so it should reflect the real
+  // portfolio state for the chosen cabang, not an incidental drill-down.
+  var base = scopedRecords();
+  var recs = branchScope === 'all' ? base : base.filter(function(r){ return r[12] === branchScope; });
+  var branchLabel = branchScope === 'all' ? 'Semua Cabang' : ((DATA.branches && DATA.branches[branchScope]) || UNSPECIFIED_BRANCH);
+  var built = buildSummarySVG(branchLabel, recs);
+  var slug = branchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'ringkasan';
+  var stamp = new Date().toISOString().slice(0,10);
+  downloadSvgAsPng(built.svg, built.width, built.height, 'sbni-ringkasan-' + slug + '-' + stamp + '.png');
+}
+
+function openExportModal(){
+  var sel = $('#export-branch-select');
+  var field = $('#export-branch-field');
+  var hasBranches = DATA.branches && DATA.branches.length > 1;
+  field.classList.toggle('hidden', !hasBranches);
+  sel.innerHTML = '';
+  sel.appendChild(el('option', {value:'all'}, ['Semua Cabang']));
+  if(hasBranches){
+    var order = DATA.branches.map(function(v,i){return i;}).sort(function(a,b){ return DATA.branches[a].localeCompare(DATA.branches[b]); });
+    order.forEach(function(i){ sel.appendChild(el('option', {value:i}, [DATA.branches[i]])); });
+  }
+  sel.value = 'all';
+  $('#export-modal-backdrop').classList.remove('hidden');
+}
+function closeExportModal(){
+  $('#export-modal-backdrop').classList.add('hidden');
+}
+
+/* ============================================================
    Navigation / shell
    ============================================================ */
 function navItemsForRole(role){
@@ -2750,6 +3144,17 @@ function initChrome(){
   });
   $('#rail-scrim').addEventListener('click', closeMobileRail);
   $('#export-csv-btn').addEventListener('click', function(){ exportCSV(filteredRecords()); });
+
+  $('#export-image-btn').addEventListener('click', openExportModal);
+  $('#export-modal-close').addEventListener('click', closeExportModal);
+  $('#export-modal-cancel').addEventListener('click', closeExportModal);
+  $('#export-modal-backdrop').addEventListener('click', function(e){ if(e.target === this) closeExportModal(); });
+  $('#export-modal-confirm').addEventListener('click', function(){
+    var sel = $('#export-branch-select');
+    var scope = sel.value === 'all' ? 'all' : Number(sel.value);
+    closeExportModal();
+    exportSummaryImage(scope);
+  });
 }
 
 function boot(){
