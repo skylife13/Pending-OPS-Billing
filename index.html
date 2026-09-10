@@ -467,6 +467,28 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
 .cred-table td{padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
 .cred-table tr:last-child td{border-bottom:none}
 
+/* ===== Finance vs Selain Finance (head-to-head) ===== */
+.finance-vs{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.finance-vs-box{
+  flex:1 1 220px;min-width:0;border-radius:14px;padding:16px 18px;border:1px solid;
+  display:flex;flex-direction:column;gap:6px;
+}
+.finance-vs-box.a{background:var(--accent-soft);border-color:var(--accent)}
+.finance-vs-box.b{background:var(--accent-2-soft);border-color:var(--accent-2)}
+.finance-vs-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.finance-vs-box.a .finance-vs-label{color:var(--accent)}
+.finance-vs-box.b .finance-vs-label{color:var(--accent-2)}
+.finance-vs-value{font-family:var(--font-mono);font-size:22px;font-weight:700;letter-spacing:-0.01em}
+.finance-vs-sub{font-size:11.5px;color:var(--text-secondary)}
+.finance-vs-badge{
+  width:38px;height:38px;border-radius:50%;background:var(--surface);border:1.5px solid var(--border-strong);
+  display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;color:var(--text-muted);
+  flex-shrink:0;box-shadow:var(--shadow-sm);
+}
+@media (max-width:640px){
+  .finance-vs{flex-direction:column;align-items:stretch}
+}
+
 /* ===== Modal (export dialog) ===== */
 .modal-backdrop{
   position:fixed;inset:0;z-index:90;background:rgba(11,11,11,0.45);
@@ -553,7 +575,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-09-10 03:38 UTC</div>
+    <div class="build-stamp">Versi build: 2026-09-10 03:45 UTC</div>
   </div>
 </div>
 
@@ -578,7 +600,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-09-10 03:38 UTC</div>
+      <div class="build-stamp">v 2026-09-10 03:45 UTC</div>
     </div>
   </aside>
 
@@ -694,6 +716,20 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
             <div><h3>Perbandingan Shipping Conditions</h3><div class="sub">Total Net Amount POD per kelompok usia (aging) dokumen</div></div>
           </div>
           <div id="compare-shipping"></div>
+        </div>
+
+        <div class="panel" style="margin-top:18px">
+          <div class="panel-head">
+            <div><h3>Breakdown POSISI DOKUMEN (Desc)</h3><div class="sub">Total Net Amount POD per posisi dokumen saat ini (kolom Ada Dimana / POSISI DOKUMEN (Desc))</div></div>
+          </div>
+          <div id="posisi-chart"></div>
+        </div>
+
+        <div class="panel" style="margin-top:18px">
+          <div class="panel-head">
+            <div><h3>Finance vs Selain Finance</h3><div class="sub">Outstanding dengan POSISI DOKUMEN (Desc) = Finance, dibanding sisa dokumen lainnya</div></div>
+          </div>
+          <div id="finance-vs-panel"></div>
         </div>
 
         <div class="panel" style="margin-top:18px">
@@ -1151,6 +1187,41 @@ function topStoresByOutstanding(recs){
     byStore[name].count += 1;
   });
   return Object.keys(byStore).map(function(k){ return byStore[k]; }).sort(function(a,b){ return b.value - a.value; });
+}
+
+// POSISI DOKUMEN (Desc) — the "Ada Dimana" field, record index 9. Unlike
+// branch/shipping condition/sales district, this one is a free-text column
+// straight from the source Excel (not an indexed DATA lookup array), so
+// it's grouped off the raw string on each record. Blank cells get a
+// readable "(Kosong)" label instead of an empty row. Shared by the
+// on-screen "Breakdown POSISI DOKUMEN (Desc)" panel and the export-image
+// summary, so both always show the exact same numbers.
+function posisiDokumenEntries(recs){
+  var sums = {};
+  recs.forEach(function(r){
+    var raw = (r[9] == null ? '' : String(r[9])).trim();
+    var key = raw === '' ? '(Kosong)' : raw;
+    sums[key] = (sums[key]||0) + r[2];
+  });
+  return Object.keys(sums).map(function(k){ return {name:k, value:sums[k]}; })
+    .sort(function(a,b){ return b.value - a.value; });
+}
+// Finance vs everything else, on that same POSISI DOKUMEN (Desc) field.
+// Matched case-insensitively since source files aren't consistent about
+// casing ("FINANCE" is the common raw value, but not guaranteed). Shared by
+// the on-screen Finance vs Selain Finance panel and the export image.
+function financeVsSplit(recs){
+  var financeTotal = 0, financeCount = 0, otherTotal = 0, otherCount = 0;
+  recs.forEach(function(r){
+    var isFinance = (r[9] == null ? '' : String(r[9])).trim().toUpperCase() === 'FINANCE';
+    if(isFinance){ financeTotal += r[2]; financeCount += 1; }
+    else { otherTotal += r[2]; otherCount += 1; }
+  });
+  var grand = financeTotal + otherTotal;
+  return {
+    financeTotal: financeTotal, financeCount: financeCount, financePct: grand ? (financeTotal/grand*100) : 0,
+    otherTotal: otherTotal, otherCount: otherCount, otherPct: grand ? (otherTotal/grand*100) : 0
+  };
 }
 
 // Metric definitions for the "Peringkat Cabang" panel — mirrors the exact
@@ -1713,6 +1784,29 @@ function renderReasonAgingPivot(container, built, opts){
 
   scrollWrap.appendChild(table);
   container.appendChild(scrollWrap);
+}
+
+// ---- Finance vs Selain Finance — two tinted stat boxes with a VS badge
+// between them, same face-off used in the export-image summary but as live
+// HTML/CSS (see .finance-vs* in style.css) instead of hand-drawn SVG, so it
+// can use the app's real CSS cascade/theme instead of a hard-coded palette.
+function renderFinanceVsPanel(container, recs){
+  container.innerHTML = '';
+  var vs = financeVsSplit(recs);
+  var wrap = el('div', {class:'finance-vs'});
+  var boxA = el('div', {class:'finance-vs-box a'});
+  boxA.appendChild(el('div', {class:'finance-vs-label'}, ['Finance']));
+  boxA.appendChild(el('div', {class:'finance-vs-value tnum'}, [fmtIDR(vs.financeTotal)]));
+  boxA.appendChild(el('div', {class:'finance-vs-sub'}, [vs.financePct.toFixed(1)+'% dari total · '+fmtInt(vs.financeCount)+' dokumen']));
+  var badge = el('div', {class:'finance-vs-badge'}, ['VS']);
+  var boxB = el('div', {class:'finance-vs-box b'});
+  boxB.appendChild(el('div', {class:'finance-vs-label'}, ['Selain Finance']));
+  boxB.appendChild(el('div', {class:'finance-vs-value tnum'}, [fmtIDR(vs.otherTotal)]));
+  boxB.appendChild(el('div', {class:'finance-vs-sub'}, [vs.otherPct.toFixed(1)+'% dari total · '+fmtInt(vs.otherCount)+' dokumen']));
+  wrap.appendChild(boxA);
+  wrap.appendChild(badge);
+  wrap.appendChild(boxB);
+  container.appendChild(wrap);
 }
 
 /* ---- Date x Aging table ----
@@ -2353,6 +2447,13 @@ function renderDashboardPage(recs){
     totalText: fmtIDR(shipCondBuilt.grandTotal),
     emptyText: 'Tidak ada data Shipping Conditions pada data ini.'
   });
+
+  // Breakdown POSISI DOKUMEN (Desc) & Finance vs Selain Finance — same
+  // "Ada Dimana" dimension used in the Ekspor Gambar summary, now surfaced
+  // on-screen too, between Shipping Conditions and Sales District.
+  renderRankBars($('#posisi-chart'), posisiDokumenEntries(recs), RISK_VARS[3], {limit:10, labelWidth:190});
+  renderFinanceVsPanel($('#finance-vs-panel'), recs);
+
   var districtBuilt = buildGroupedAgingRows(recs, 14, DATA.salesDistricts);
   renderPercentAgingPivot($('#compare-district'), districtBuilt, {
     rowHeader: 'Sales District',
@@ -3045,43 +3146,20 @@ function buildSummarySVG(scopeLabel, recs, branchScope){
     cursor += scH + 30;
   }
 
-  // ---- Breakdown POSISI DOKUMEN (Desc) — the "Ada Dimana" field (record
-  // index 9), a free-text column (not an indexed DATA lookup like
-  // branch/shipping condition), so it's grouped straight off the raw
-  // string on each record. Blank cells get a readable "(Kosong)" label
-  // instead of an empty row. ----
-  var posisiSums = {};
-  recs.forEach(function(r){
-    var raw = (r[9] == null ? '' : String(r[9])).trim();
-    var key = raw === '' ? '(Kosong)' : raw;
-    posisiSums[key] = (posisiSums[key]||0) + r[2];
-  });
-  var posisiEntries = Object.keys(posisiSums).map(function(k){ return {name:k, value:posisiSums[k]}; })
-    .sort(function(a,b){ return b.value - a.value; });
+  // ---- Breakdown POSISI DOKUMEN (Desc) ----
+  var posisiEntries = posisiDokumenEntries(recs);
   var pdH = drawRankListSVG(nodes, padX, cursor, innerW, 'Breakdown POSISI DOKUMEN (Desc)', posisiEntries, SUMMARY_COLORS.risk[3], 10);
   cursor += pdH + 30;
 
-  // ---- Finance vs Selain Finance — a specific drill-down on the same
-  // POSISI DOKUMEN (Desc) field: how much of the outstanding sits with
-  // Finance specifically vs everything else. Matched case-insensitively
-  // since source files aren't consistent about casing ("FINANCE" is the
-  // common raw value, but not guaranteed). ----
-  var financeTotal = 0, financeCount = 0, nonFinanceTotal = 0, nonFinanceCount = 0;
-  recs.forEach(function(r){
-    var isFinance = (r[9] == null ? '' : String(r[9])).trim().toUpperCase() === 'FINANCE';
-    if(isFinance){ financeTotal += r[2]; financeCount += 1; }
-    else { nonFinanceTotal += r[2]; nonFinanceCount += 1; }
-  });
-  var vsGrand = financeTotal + nonFinanceTotal;
-  var financePct = vsGrand ? (financeTotal/vsGrand*100) : 0;
-  var nonFinancePct = vsGrand ? (nonFinanceTotal/vsGrand*100) : 0;
+  // ---- Finance vs Selain Finance ----
+  var vs = financeVsSplit(recs);
   var vsH = drawVsPanelSVG(nodes, padX, cursor, innerW,
     'Finance vs Selain Finance',
     'Outstanding dengan POSISI DOKUMEN (Desc) = Finance, dibanding sisa dokumen lainnya',
-    { label:'Finance', value:financeTotal, colorHex:SUMMARY_COLORS.accent, tintHex:'rgba(42,120,214,0.08)',
-      pctText: financePct.toFixed(1)+'% dari total · '+fmtInt(financeCount)+' dokumen' },
-    { label:'Selain Finance', value:nonFinanceTotal, colorHex:SUMMARY_COLORS.accent2, tintHex:'rgba(235,104,52,0.10)',
-      pctText: nonFinancePct.toFixed(1)+'% dari total · '+fmtInt(nonFinanceCount)+' dokumen' }
+    { label:'Finance', value:vs.financeTotal, colorHex:SUMMARY_COLORS.accent, tintHex:'rgba(42,120,214,0.08)',
+      pctText: vs.financePct.toFixed(1)+'% dari total · '+fmtInt(vs.financeCount)+' dokumen' },
+    { label:'Selain Finance', value:vs.otherTotal, colorHex:SUMMARY_COLORS.accent2, tintHex:'rgba(235,104,52,0.10)',
+      pctText: vs.otherPct.toFixed(1)+'% dari total · '+fmtInt(vs.otherCount)+' dokumen' }
   );
   cursor += vsH + 30;
 
