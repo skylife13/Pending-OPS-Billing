@@ -553,7 +553,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-09-09 10:00 UTC</div>
+    <div class="build-stamp">Versi build: 2026-09-10 03:06 UTC</div>
   </div>
 </div>
 
@@ -578,7 +578,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-09-09 10:00 UTC</div>
+      <div class="build-stamp">v 2026-09-10 03:06 UTC</div>
     </div>
   </aside>
 
@@ -2868,7 +2868,24 @@ function drawRankListSVG(nodes, x, y, w, title, entries, colorHex, limit){
 // (renderAgingBars, renderRankBars, renderStatusTrendChart), just laid out
 // once as a fixed report instead of a resizable panel. `recs` must already
 // be scoped (see exportSummaryImage) — this only lays out and draws.
-function buildSummarySVG(scopeLabel, recs){
+// Sums Net Amount POD by an arbitrary record field (branch/shipping
+// condition/sales district all live at fixed indices — see the record
+// shape comment near transformRows()), resolving each key through the
+// matching DATA lookup array. Used by the summary-image breakdown sections
+// below, which don't need the full aggregate()/BRANCH_METRICS machinery —
+// just one number (outstanding total) per category.
+function sumEntriesByField(recs, fieldIdx, nameLookup, fallbackLabel){
+  var sums = {};
+  recs.forEach(function(r){
+    var k = r[fieldIdx];
+    sums[k] = (sums[k]||0) + r[2];
+  });
+  return Object.keys(sums).map(function(k){
+    return { name: (nameLookup && nameLookup[k]) || fallbackLabel, value: sums[k] };
+  }).sort(function(a,b){ return b.value - a.value; });
+}
+
+function buildSummarySVG(scopeLabel, recs, branchScope){
   var W = 1000, padX = 44, innerW = W - padX*2;
   var nodes = [];
   var cursor = 46;
@@ -2923,6 +2940,17 @@ function buildSummarySVG(scopeLabel, recs){
   });
   cursor += cardH + 34;
 
+  // ---- Breakdown per Cabang — only for the "Semua Cabang" export; a
+  // single-branch export already IS one branch's numbers, so a breakdown
+  // of itself would be redundant. Mirrors the dashboard's own "Peringkat
+  // Cabang" panel (outstanding metric), reusing the exact same math via
+  // branchMetricEntries() so the numbers match what's on screen. ----
+  if(branchScope === 'all' && DATA.branches && DATA.branches.length > 1){
+    var branchEntries = branchMetricEntries(recs, 'outstanding');
+    var brH = drawRankListSVG(nodes, padX, cursor, innerW, 'Breakdown per Cabang', branchEntries, SUMMARY_COLORS.accent, 12);
+    cursor += brH + 30;
+  }
+
   // ---- Aging composition ----
   nodes.push(svgText(padX, cursor, 'Komposisi Aging', {size:13.5, weight:700}));
   nodes.push(svgText(W-padX, cursor, 'Total nilai per bucket', {size:10.5, fill:SUMMARY_COLORS.textMuted, anchor:'end'}));
@@ -2961,6 +2989,16 @@ function buildSummarySVG(scopeLabel, recs){
   var storeEntries = topStoresByOutstanding(recs);
   var sH = drawRankListSVG(nodes, padX, cursor, innerW, 'Toko Perlu Diperhatikan', storeEntries, SUMMARY_COLORS.risk[6], 5);
   cursor += sH + 30;
+
+  // ---- Analisa by Shipping Condition — included on every export
+  // regardless of cabang scope, same "-" placeholder gate used elsewhere
+  // (DATA.shippingConditions.length > 1) so it's skipped for data that
+  // predates that column entirely. ----
+  if(DATA.shippingConditions && DATA.shippingConditions.length > 1){
+    var shipCondEntries = sumEntriesByField(recs, 13, DATA.shippingConditions, UNSPECIFIED_LABEL);
+    var scH = drawRankListSVG(nodes, padX, cursor, innerW, 'Analisa by Shipping Condition', shipCondEntries, SUMMARY_COLORS.accent2, 10);
+    cursor += scH + 30;
+  }
 
   // ---- Footer ----
   nodes.push(svgRect(padX, cursor, innerW, 1, {fill:SUMMARY_COLORS.border}));
@@ -3027,7 +3065,7 @@ function exportSummaryImage(branchScope){
   var base = scopedRecords();
   var recs = branchScope === 'all' ? base : base.filter(function(r){ return r[12] === branchScope; });
   var branchLabel = branchScope === 'all' ? 'Semua Cabang' : ((DATA.branches && DATA.branches[branchScope]) || UNSPECIFIED_BRANCH);
-  var built = buildSummarySVG(branchLabel, recs);
+  var built = buildSummarySVG(branchLabel, recs, branchScope);
   var slug = branchLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'ringkasan';
   var stamp = new Date().toISOString().slice(0,10);
   downloadSvgAsPng(built.svg, built.width, built.height, 'sbni-ringkasan-' + slug + '-' + stamp + '.png');
