@@ -553,7 +553,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
       <div id="login-error" class="login-error"></div>
     </form>
     <div class="login-foot">Vendor: gunakan username &amp; password yang dibagikan tim Anda. Admin &amp; Owner: hubungi pemilik dashboard bila lupa kredensial.</div>
-    <div class="build-stamp">Versi build: 2026-09-10 03:06 UTC</div>
+    <div class="build-stamp">Versi build: 2026-09-10 03:38 UTC</div>
   </div>
 </div>
 
@@ -578,7 +578,7 @@ table.pivot-table td.pv-total, table.pivot-table th.pv-total{font-weight:700;col
         </div>
       </div>
       <button id="logout-btn" class="rail-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> Keluar</button>
-      <div class="build-stamp">v 2026-09-10 03:06 UTC</div>
+      <div class="build-stamp">v 2026-09-10 03:38 UTC</div>
     </div>
   </aside>
 
@@ -2841,6 +2841,13 @@ function drawRankListSVG(nodes, x, y, w, title, entries, colorHex, limit){
   nodes.push(svgText(x, y, title, {size:13, weight:700}));
   var top = entries.slice(0, limit || 5);
   var top0 = y + 22;
+  // Grand Total is summed over ALL entries, not just the visible top N — so
+  // it stays a true reconciliation check (e.g. it should match the Total
+  // Outstanding KPI card exactly for Breakdown per Cabang / Shipping
+  // Condition, since every record has one) even when a list like Kategori/
+  // Reason or Toko Perlu Diperhatikan is cut down to its top 5.
+  var grandTotal = 0;
+  entries.forEach(function(e){ grandTotal += e.value; });
   if(top.length === 0){
     nodes.push(svgText(x, top0+14, 'Tidak ada data.', {size:11, fill:SUMMARY_COLORS.textMuted}));
     return 22 + 30;
@@ -2860,7 +2867,45 @@ function drawRankListSVG(nodes, x, y, w, title, entries, colorHex, limit){
     nodes.push(svgRect(barX, ry+5, bw, rowH-10, {rx:5, fill:colorHex}));
     nodes.push(svgText(barX+barAreaW+10, ry+rowH/2+4, fmtCompact(e.value), {size:10.5, weight:700, fill:SUMMARY_COLORS.textPrimary}));
   });
-  return 22 + top.length*(rowH+gap) - gap + 6;
+  var listBottom = top0 + top.length*(rowH+gap) - gap;
+  var hiddenCount = entries.length - top.length;
+  var gtY = listBottom + 22;
+  nodes.push(svgRect(x, gtY-15, w, 1, {fill:SUMMARY_COLORS.borderStrong}));
+  var gtLabel = 'Grand Total' + (hiddenCount > 0 ? ' (top '+top.length+' dari '+entries.length+')' : '');
+  nodes.push(svgText(x, gtY, gtLabel, {size:11, weight:800, fill:SUMMARY_COLORS.textPrimary}));
+  nodes.push(svgText(x+w, gtY, fmtCompact(grandTotal), {size:12, weight:800, fill:SUMMARY_COLORS.textPrimary, anchor:'end'}));
+  return (gtY - y) + 8;
+}
+
+// A head-to-head "X vs Y" face-off: two tinted stat boxes with a VS badge
+// between them — used for the Finance vs Selain Finance split. `left`/
+// `right` are {label, value, pctText, colorHex, tintHex}. Returns the
+// height consumed so the caller can stack sections underneath it.
+function drawVsPanelSVG(nodes, x, y, w, title, subtitle, left, right){
+  nodes.push(svgText(x, y, title, {size:13, weight:700}));
+  var top0 = y + 12;
+  if(subtitle){
+    nodes.push(svgText(x, top0+10, subtitle, {size:10.5, fill:SUMMARY_COLORS.textMuted}));
+    top0 += 24;
+  } else {
+    top0 += 10;
+  }
+  var boxH = 104, gap = 64;
+  var boxW = (w - gap) / 2;
+  var boxY = top0;
+  [[x, left], [x+boxW+gap, right]].forEach(function(pair){
+    var bx = pair[0], d = pair[1];
+    nodes.push(svgRect(bx, boxY, boxW, boxH, {rx:12, fill:d.tintHex, stroke:d.colorHex}));
+    nodes.push(svgText(bx+16, boxY+26, String(d.label).toUpperCase(), {size:10, weight:700, fill:d.colorHex, letterSpacing:'0.4px'}));
+    var valStr = fmtIDR(d.value);
+    nodes.push(svgText(bx+16, boxY+58, valStr, {size:kpiValueFontSize(valStr, boxW-32), weight:800, fill:SUMMARY_COLORS.textPrimary}));
+    nodes.push(svgText(bx+16, boxY+82, d.pctText, {size:10.5, fill:SUMMARY_COLORS.textSecondary}));
+  });
+  var cx = x + boxW + gap/2;
+  var cy = boxY + boxH/2;
+  nodes.push(svgEl('circle', {cx:cx, cy:cy, r:20, fill:SUMMARY_COLORS.surface, stroke:SUMMARY_COLORS.borderStrong, 'stroke-width':1.5}));
+  nodes.push(svgText(cx, cy+5, 'VS', {size:13, weight:800, fill:SUMMARY_COLORS.textMuted, anchor:'middle'}));
+  return (boxY + boxH) - y + 10;
 }
 
 // Builds the whole 1-page summary as a single, self-contained <svg> node —
@@ -2999,6 +3044,46 @@ function buildSummarySVG(scopeLabel, recs, branchScope){
     var scH = drawRankListSVG(nodes, padX, cursor, innerW, 'Analisa by Shipping Condition', shipCondEntries, SUMMARY_COLORS.accent2, 10);
     cursor += scH + 30;
   }
+
+  // ---- Breakdown POSISI DOKUMEN (Desc) — the "Ada Dimana" field (record
+  // index 9), a free-text column (not an indexed DATA lookup like
+  // branch/shipping condition), so it's grouped straight off the raw
+  // string on each record. Blank cells get a readable "(Kosong)" label
+  // instead of an empty row. ----
+  var posisiSums = {};
+  recs.forEach(function(r){
+    var raw = (r[9] == null ? '' : String(r[9])).trim();
+    var key = raw === '' ? '(Kosong)' : raw;
+    posisiSums[key] = (posisiSums[key]||0) + r[2];
+  });
+  var posisiEntries = Object.keys(posisiSums).map(function(k){ return {name:k, value:posisiSums[k]}; })
+    .sort(function(a,b){ return b.value - a.value; });
+  var pdH = drawRankListSVG(nodes, padX, cursor, innerW, 'Breakdown POSISI DOKUMEN (Desc)', posisiEntries, SUMMARY_COLORS.risk[3], 10);
+  cursor += pdH + 30;
+
+  // ---- Finance vs Selain Finance — a specific drill-down on the same
+  // POSISI DOKUMEN (Desc) field: how much of the outstanding sits with
+  // Finance specifically vs everything else. Matched case-insensitively
+  // since source files aren't consistent about casing ("FINANCE" is the
+  // common raw value, but not guaranteed). ----
+  var financeTotal = 0, financeCount = 0, nonFinanceTotal = 0, nonFinanceCount = 0;
+  recs.forEach(function(r){
+    var isFinance = (r[9] == null ? '' : String(r[9])).trim().toUpperCase() === 'FINANCE';
+    if(isFinance){ financeTotal += r[2]; financeCount += 1; }
+    else { nonFinanceTotal += r[2]; nonFinanceCount += 1; }
+  });
+  var vsGrand = financeTotal + nonFinanceTotal;
+  var financePct = vsGrand ? (financeTotal/vsGrand*100) : 0;
+  var nonFinancePct = vsGrand ? (nonFinanceTotal/vsGrand*100) : 0;
+  var vsH = drawVsPanelSVG(nodes, padX, cursor, innerW,
+    'Finance vs Selain Finance',
+    'Outstanding dengan POSISI DOKUMEN (Desc) = Finance, dibanding sisa dokumen lainnya',
+    { label:'Finance', value:financeTotal, colorHex:SUMMARY_COLORS.accent, tintHex:'rgba(42,120,214,0.08)',
+      pctText: financePct.toFixed(1)+'% dari total · '+fmtInt(financeCount)+' dokumen' },
+    { label:'Selain Finance', value:nonFinanceTotal, colorHex:SUMMARY_COLORS.accent2, tintHex:'rgba(235,104,52,0.10)',
+      pctText: nonFinancePct.toFixed(1)+'% dari total · '+fmtInt(nonFinanceCount)+' dokumen' }
+  );
+  cursor += vsH + 30;
 
   // ---- Footer ----
   nodes.push(svgRect(padX, cursor, innerW, 1, {fill:SUMMARY_COLORS.border}));
