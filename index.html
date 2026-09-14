@@ -2542,7 +2542,7 @@ function transformRows(rows){
   // "Sales office" is present we auto-tag each record's branch from it
   // instead of relying on the Upload page's manual "Nama Cabang" field —
   // see handleFile(), which checks newData.branchAutoDetected.
-  var iBranch = col('Sales office'), iShipCond = col('Shipping Conditions'), iSalesDistrict = col('Sales District');
+  var iBranch = col('Branch'), iShipCond = col('Shipping Conditions'), iSalesDistrict = col('Sales District');
   var branchAutoDetected = iBranch >= 0;
   if(iAmt<0 || iStatus<0 || iAgDays<0){
     throw new Error('Format kolom tidak dikenali. Pastikan file memiliki kolom "Net Amount POD", "Status Surat Jalan", dan "Aging".');
